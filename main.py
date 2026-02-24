@@ -30,6 +30,7 @@ if env_path.exists():
 from scanners.hackernews import scan_who_is_hiring
 from scanners.apify_scanners import scan_reddit, scan_twitter, scan_linkedin, scan_producthunt
 from personalizer import personalize_batch
+from notifier import send_digest_summary
 
 
 def generate_digest(opportunities: list[dict]) -> str:
@@ -112,10 +113,12 @@ def generate_digest(opportunities: list[dict]) -> str:
 def main():
     hn_only = "--hn-only" in sys.argv
     no_personalize = "--no-personalize" in sys.argv
+    send_notify = "--notify" in sys.argv or "--telegram" in sys.argv
 
     print("🔍 Prospect Scanner — Starting scan...")
     print(f"   Mode: {'HN only' if hn_only else 'All platforms'}")
     print(f"   Personalization: {'OFF' if no_personalize else 'ON'}")
+    print(f"   Telegram: {'ON' if send_notify else 'OFF (use --notify to enable)'}")
     print()
 
     all_opportunities = []
@@ -159,10 +162,15 @@ def main():
     output_file.write_text(digest)
 
     print(f"\n✅ Digest saved to: {output_file}")
-    print(f"   Open it: cat {output_file}")
+
+    # Send to Telegram
+    if send_notify:
+        print("\n📱 Sending to Telegram...")
+        send_digest_summary(all_opportunities)
 
     return all_opportunities
 
 
 if __name__ == "__main__":
     main()
+
