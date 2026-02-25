@@ -18,6 +18,8 @@ SEARCH_KEYWORDS = [
     "cofounder technical",
     "need help building",
     "who can build",
+    "YC founder looking",
+    "startup looking for founding engineer",
 ]
 
 # --- Reddit subreddits to scan ---
@@ -36,10 +38,10 @@ SUBREDDITS = [
 
 # --- Apify actor IDs ---
 APIFY_ACTORS = {
-    "reddit": "trudax/reddit-scraper",
+    "reddit": "trudax/reddit-scraper-lite",
     "twitter": "apidojo/tweet-scraper",
-    "linkedin": "anchor/linkedin-search",
-    "producthunt": "dtrungtin/product-hunt-scraper",
+    "linkedin": "apify/google-search-scraper",
+    "producthunt": "apify/google-search-scraper",
 }
 
 # --- Your profile (used for personalization) ---
@@ -55,4 +57,5 @@ YOUR_PROFILE = {
         "william.ai — Anti-slop AI ghostwriting tool",
         "LeadFlow Lab — Revenue infrastructure for B2B",
     ],
+    "goals": "Open to landing a founding engineer or product engineer role in a YC backed company. Looking for a young, hungry startup team where I can work closely with the founders.",
 }

@@ -29,7 +29,8 @@ if env_path.exists():
 
 from scanners.hackernews import scan_who_is_hiring
 from scanners.apify_scanners import scan_reddit, scan_twitter, scan_linkedin, scan_producthunt
-from personalizer import personalize_batch
+from personalizer import personalize_batch, filter_and_rank_opportunities
+from enricher import enrich_batch
 from notifier import send_digest_summary
 
 
@@ -80,22 +81,28 @@ def generate_digest(opportunities: list[dict]) -> str:
 
             if opp.get("followers"):
                 lines.append(f"- **Followers**: {opp['followers']}")
+                
+            if opp.get("email"):
+                lines.append(f"- **Email**: {opp['email']}")
+                
+            if opp.get("linkedin_url"):
+                lines.append(f"- **LinkedIn**: {opp['linkedin_url']}")
 
             lines.append("")
             lines.append(f"> {opp.get('text', '')[:300]}")
             lines.append("")
 
-            if opp.get("draft_message"):
-                lines.append(f"**📝 Draft Message:**")
+            if opp.get("cold_email"):
+                lines.append(f"**📝 Draft Cold Email:**")
                 lines.append(f"```")
-                lines.append(opp["draft_message"])
+                lines.append(opp["cold_email"])
                 lines.append(f"```")
                 lines.append("")
 
-            if opp.get("draft_follow_up"):
-                lines.append(f"**🔄 Follow-up (if no reply in 5 days):**")
+            if opp.get("linkedin_note"):
+                lines.append(f"**🤝 Draft LinkedIn Connection Note:**")
                 lines.append(f"```")
-                lines.append(opp["draft_follow_up"])
+                lines.append(opp["linkedin_note"])
                 lines.append(f"```")
                 lines.append("")
 
@@ -148,6 +155,14 @@ def main():
             print()
 
     print(f"\n📋 Total opportunities found: {len(all_opportunities)}")
+
+    # Filter and rank top 10 best leads using Gemini
+    if all_opportunities:
+        all_opportunities = filter_and_rank_opportunities(all_opportunities, top_k=10)
+
+    # Enrich with email and linkedin URLs
+    if not no_personalize and all_opportunities:
+        all_opportunities = enrich_batch(all_opportunities)
 
     # Personalize messages with Gemini
     if not no_personalize and all_opportunities:

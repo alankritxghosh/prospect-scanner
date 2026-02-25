@@ -24,8 +24,9 @@ def _run_actor(actor_id: str, run_input: dict, timeout: int = 120) -> list[dict]
 
     try:
         # Start the actor run
+        actor_path = actor_id.replace("/", "~")
         resp = requests.post(
-            f"{APIFY_BASE}/acts/{actor_id}/runs",
+            f"{APIFY_BASE}/acts/{actor_path}/runs",
             params={"token": APIFY_TOKEN},
             json=run_input,
             timeout=30,
@@ -89,11 +90,11 @@ def scan_reddit() -> list[dict]:
     ]
 
     for term in search_terms[:3]:  # Limit to save Apify credits
-        results = _run_actor("trudax/reddit-scraper", {
+        results = _run_actor("trudax/reddit-scraper-lite", {
             "searches": [term],
             "sort": "new",
             "time": "week",
-            "numberOfPosts": 15,
+            "maxItems": 15,
         })
 
         for post in results:
@@ -164,31 +165,33 @@ def scan_linkedin() -> list[dict]:
     print("  📡 Scanning LinkedIn via Apify...")
     opportunities = []
 
-    results = _run_actor("anchor/linkedin-search", {
-        "searchTerms": [
-            "looking for developer to build MVP",
-            "need technical cofounder startup",
-            "hiring freelance developer AI",
-        ],
-        "maxResults": 20,
+    results = _run_actor("apify/google-search-scraper", {
+        "queries": "site:linkedin.com/posts \"looking for developer to build MVP\" OR \"need technical cofounder startup\" OR \"hiring freelance developer AI\"",
+        "resultsPerPage": 20,
     })
 
-    for post in results:
-        text = post.get("text") or post.get("content", "")
-        author_name = post.get("authorName") or post.get("author", "")
-        author_title = post.get("authorTitle") or post.get("headline", "")
+    if results and len(results) > 0 and "organicResults" in results[0]:
+        for post in results[0]["organicResults"]:
+            text = post.get("description", "")
+            title = post.get("title", "")
+            
+            # Very basic author extraction from title "Post | John Doe | LinkedIn"
+            author_name = "unknown"
+            if "|" in title:
+                parts = [p.strip() for p in title.split("|")]
+                if len(parts) >= 2: author_name = parts[-2]
 
-        opportunities.append({
-            "platform": "LinkedIn",
-            "type": "Post",
-            "title": text[:100],
-            "text": text[:500],
-            "url": post.get("url") or post.get("postUrl", ""),
-            "author": author_name,
-            "author_title": author_title,
-            "keywords_matched": ["linkedin search"],
-            "posted": post.get("postedAt") or post.get("date", "unknown"),
-        })
+            opportunities.append({
+                "platform": "LinkedIn",
+                "type": "Post",
+                "title": title[:100],
+                "text": text[:500],
+                "url": post.get("url", ""),
+                "author": author_name,
+                "author_title": "",
+                "keywords_matched": ["linkedin search"],
+                "posted": "unknown",
+            })
 
     print(f"  ✅ Found {len(opportunities)} LinkedIn opportunities")
     return opportunities
@@ -199,27 +202,27 @@ def scan_producthunt() -> list[dict]:
     print("  📡 Scanning Product Hunt via Apify...")
     opportunities = []
 
-    results = _run_actor("dtrungtin/product-hunt-scraper", {
-        "startUrls": [{"url": "https://www.producthunt.com/"}],
-        "maxItems": 20,
+    results = _run_actor("apify/google-search-scraper", {
+        "queries": "site:producthunt.com/products \"I built\" OR \"we built\" OR \"just launched\" \"seeking\" OR \"feedback\"",
+        "resultsPerPage": 20,
     })
 
-    for product in results:
-        name = product.get("name", "")
-        tagline = product.get("tagline", "")
-        description = product.get("description", "")
+    if results and len(results) > 0 and "organicResults" in results[0]:
+        for product in results[0]["organicResults"]:
+            title = product.get("title", "")
+            description = product.get("description", "")
 
-        opportunities.append({
-            "platform": "Product Hunt",
-            "type": "Launch",
-            "title": f"{name} — {tagline}",
-            "text": description[:500],
-            "url": product.get("url", ""),
-            "author": product.get("maker") or product.get("hunterName", "unknown"),
-            "keywords_matched": ["new launch"],
-            "posted": product.get("launchedAt") or product.get("date", "unknown"),
-            "votes": product.get("votesCount", 0),
-        })
+            opportunities.append({
+                "platform": "Product Hunt",
+                "type": "Launch",
+                "title": title[:100],
+                "text": description[:500],
+                "url": product.get("url", ""),
+                "author": "unknown",
+                "keywords_matched": ["ph search"],
+                "posted": "unknown",
+                "votes": 0,
+            })
 
     print(f"  ✅ Found {len(opportunities)} Product Hunt launches")
     return opportunities

@@ -4,6 +4,7 @@ using Google's Gemini API (free tier).
 """
 
 import os
+import json
 import google.generativeai as genai
 from config import YOUR_PROFILE
 
@@ -53,6 +54,7 @@ ABOUT THE SENDER:
 - Skills: {YOUR_PROFILE['skills']}
 - Products built: {', '.join(YOUR_PROFILE['products'])}
 - Portfolio: {YOUR_PROFILE['portfolio']}
+- Goals: {YOUR_PROFILE.get('goals', '')}
 
 THE OPPORTUNITY:
 Platform: {platform}
@@ -62,23 +64,20 @@ About them: {author_context}
 RULES:
 1. Reference something SPECIFIC from their post — not generic
 2. Connect it to something the sender has actually built
-3. Keep it under 5 lines for DMs, 8 lines for email
-4. End with a low-friction CTA (15-min call, feedback, question)
-5. Do NOT say "I came across your profile" or "I'm excited to"
-6. Do NOT mention pricing
-7. Sound like a real human, not a sales bot
-8. Match the platform's tone: {'casual' if platform in ['Reddit', 'Twitter/X'] else 'professional but warm'}
+3. Cold Email: Keep it under 8 lines, professional but warm, and end with a low-friction CTA.
+4. LinkedIn Connection Note: MUST BE STRICTLY UNDER 300 CHARACTERS. Be punchy and direct. Not a hard sell.
+5. Do NOT mention pricing. Do NOT say "I came across your profile".
 
 Generate TWO things:
-1. MAIN MESSAGE: The initial outreach message
-2. FOLLOW-UP: A shorter follow-up to send if no reply in 5 days
+1. COLD EMAIL
+2. LINKEDIN NOTE
 
 Format:
-MAIN:
-[message]
+EMAIL:
+[cold email body]
 
-FOLLOW_UP:
-[follow-up message]
+LINKEDIN:
+[linkedin note body]
 """
 
     try:
@@ -86,24 +85,22 @@ FOLLOW_UP:
         result_text = response.text.strip()
 
         # Parse the response
-        main_msg = result_text
-        follow_up = ""
+        email = ""
+        linkedin = ""
+        search = ""
 
-        if "FOLLOW_UP:" in result_text:
-            parts = result_text.split("FOLLOW_UP:")
-            main_msg = parts[0].replace("MAIN:", "").strip()
-            follow_up = parts[1].strip()
-        elif "FOLLOW-UP:" in result_text:
-            parts = result_text.split("FOLLOW-UP:")
-            main_msg = parts[0].replace("MAIN:", "").strip()
-            follow_up = parts[1].strip()
+        if "EMAIL:" in result_text:
+            parts = result_text.split("LINKEDIN:")
+            email = parts[0].replace("EMAIL:", "").strip()
+            if len(parts) > 1:
+                linkedin = parts[1].strip()
 
-        opportunity["draft_message"] = main_msg
-        opportunity["draft_follow_up"] = follow_up
+        opportunity["cold_email"] = email or result_text
+        opportunity["linkedin_note"] = linkedin
 
     except Exception as e:
-        opportunity["draft_message"] = f"[⚠️ Gemini error: {e}]"
-        opportunity["draft_follow_up"] = ""
+        opportunity["cold_email"] = f"[⚠️ Gemini error: {e}]"
+        opportunity["linkedin_note"] = ""
 
     return opportunity
 
@@ -138,3 +135,73 @@ def personalize_batch(opportunities: list[dict], max_personalize: int = 20) -> l
 
     print(f"  ✅ Personalization complete")
     return opportunities
+
+
+def filter_and_rank_opportunities(opportunities: list[dict], top_k: int = 10) -> list[dict]:
+    """
+    Uses Gemini to evaluate all opportunities against the user's profile and returns the top 10.
+    """
+    if not opportunities:
+        return []
+
+    model = _get_model()
+    if not model:
+        print("  ⚠️ GEMINI_API_KEY not set — skipping ranking and returning top 10 natively")
+        return opportunities[:top_k]
+
+    print(f"  🧠 AI is ranking {len(opportunities)} opportunities to find the top {top_k}...")
+
+    # Prepare catalog
+    catalog = ""
+    for i, opp in enumerate(opportunities):
+        catalog += f"ID: {i}\n"
+        catalog += f"Platform: {opp.get('platform')}\n"
+        catalog += f"Title: {opp.get('title')}\n"
+        catalog += f"Text: {opp.get('text', '')[:300]}\n"
+        catalog += "---\n"
+
+    prompt = f"""You are an elite lead generation assistant for {YOUR_PROFILE['name']}.
+Your goal is to evaluate a list of leads (project opportunities) and select the absolute BEST {top_k} fits.
+
+ABOUT {YOUR_PROFILE['name']}:
+- Title: {YOUR_PROFILE['title']}
+- Speed: {YOUR_PROFILE['speed']}
+- Skills: {YOUR_PROFILE['skills']}
+- Portfolio/Products: {', '.join(YOUR_PROFILE['products'])}
+- Goals: {YOUR_PROFILE.get('goals', '')}
+
+INSTRUCTIONS:
+1. Review the provided catalog of {len(opportunities)} leads.
+2. Select the top {top_k} IDs that are the highest quality matches for the sender's skills, speed, and specifically their goals (e.g. prioritize YC-backed companies, young hungry teams, or founding engineer roles).
+3. Return ONLY a valid JSON array of integers representing the chosen IDs. No markdown formatting, no explanations, just the JSON array.
+Example output: [5, 12, 45, 2, 99, 102, 34, 1, 88, 7]
+
+CATALOG:
+{catalog}
+"""
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text.replace("```json", "").replace("```", "").strip()
+        elif text.startswith("```"):
+            text = text.replace("```", "").strip()
+            
+        top_ids = json.loads(text)
+        
+        # Ensure we only get valid indices
+        valid_ids = [i for i in top_ids if isinstance(i, int) and 0 <= i < len(opportunities)]
+        
+        top_opportunities = [opportunities[i] for i in valid_ids[:top_k]]
+        
+        # Fallback if Gemini didn't return enough 
+        if not top_opportunities:
+            print("  ⚠️ AI ranking returned empty, falling back to recent ones.")
+            return opportunities[:top_k]
+
+        print(f"  ✅ AI successfully selected top {len(top_opportunities)} leads")
+        return top_opportunities
+
+    except Exception as e:
+        print(f"  ⚠️ Error during AI ranking: {e}. Falling back to default top {top_k}.")
+        return opportunities[:top_k]

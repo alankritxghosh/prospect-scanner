@@ -90,7 +90,9 @@ def send_digest_summary(opportunities: list[dict]) -> bool:
     _send_telegram(header)
 
     # Send top opportunities (max 10 to avoid spam)
-    high_value = [o for o in opportunities if o.get("draft_message") and o["draft_message"].strip()]
+    high_value = [o for o in opportunities if (o.get("cold_email") and o["cold_email"].strip()) or (o.get("linkedin_note") and o["linkedin_note"].strip())]
+    if not high_value:
+        high_value = opportunities  # fallback to all if no personalized ones
     count = min(len(high_value), 10)
 
     for i, opp in enumerate(high_value[:count]):
@@ -98,16 +100,21 @@ def send_digest_summary(opportunities: list[dict]) -> bool:
         author = opp.get("author", "unknown")
         title = _truncate(opp.get("title", ""), 100)
         url = opp.get("url", "")
-        draft = opp.get("draft_message", "")
+        cold_email = opp.get("cold_email", "")
+        linkedin_note = opp.get("linkedin_note", "")
 
-        # Clean up draft message (remove "Option 1/2" boilerplate from Gemini)
-        draft_lines = draft.split("\n")
-        clean_draft = []
-        for line in draft_lines:
-            line = line.strip()
-            if line and not line.startswith("**OPTION") and not line.startswith("**Option") and not line.startswith("Here are") and not line.startswith("Okay,") and line != "****" and line != "**":
-                clean_draft.append(line)
-        draft = "\n".join(clean_draft[:8])  # Max 8 lines
+        # Clean up Gemini artifacts
+        def _clean_gemini(text):
+            lines = text.split("\n")
+            clean = []
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith("**OPTION") and not line.startswith("**Option") and not line.startswith("Here are") and not line.startswith("Okay,") and line != "****" and line != "**" and not line.startswith("**EMAIL") and not line.startswith("**LINKEDIN") and not line.startswith("**SEARCH"):
+                    clean.append(line)
+            return "\n".join(clean[:8])
+
+        cold_email = _clean_gemini(cold_email)
+        linkedin_note = _clean_gemini(linkedin_note)
 
         msg = (
             f"📌 *Lead {i+1}/{count}* — {platform}\n"
@@ -117,7 +124,10 @@ def send_digest_summary(opportunities: list[dict]) -> bool:
         if url:
             msg += f"🔗 {url}\n"
 
-        msg += f"\n💬 *Draft message:*\n{draft}\n"
+        if cold_email:
+            msg += f"\n📧 *Cold Email:*\n{cold_email}\n"
+        if linkedin_note:
+            msg += f"\n🤝 *LinkedIn Note:*\n{linkedin_note}\n"
 
         _send_telegram(msg)
 
